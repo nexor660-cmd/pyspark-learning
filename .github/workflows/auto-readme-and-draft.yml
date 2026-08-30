@@ -1,0 +1,88 @@
+name: Auto README + Social Draft
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  update-readme-and-create-draft:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update README last updated date
+        run: |
+          DATE=$(date +"%Y-%m-%d")
+          if [ -f README.md ]; then
+            if grep -q "_Last updated:" README.md; then
+              sed -i "s|_Last updated:.*|_Last updated: ${DATE}_|" README.md
+            else
+              echo -e "\n_Last updated: ${DATE}_" >> README.md
+            fi
+          else
+            echo -e "# PySpark Learning Journey\n\n_Last updated: ${DATE}_" > README.md
+          fi
+
+      - name: Generate social media draft
+        run: |
+          COMMIT_MSG=$(git log -1 --pretty=%B | head -n 5)
+          REPO_URL="https://github.com/${{ github.repository }}"
+          
+          cat > social-draft.md << EOF
+          🚀 Just pushed an update to my PySpark learning journey!
+
+          ${COMMIT_MSG}
+
+          Repo: ${REPO_URL}
+
+          #DataEngineering #PySpark #ApacheSpark #LearningInPublic
+          EOF
+
+      - name: Commit README update
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          git diff --staged --quiet || git commit -m "docs: auto-update README [skip ci]"
+          git push
+
+      - name: Create verification Issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const draft = fs.readFileSync('social-draft.md', 'utf8');
+            
+            const body = `## Social Media Draft (Please Verify)
+
+            Copy the text below and post it on LinkedIn / X after reviewing.
+
+            ---
+            \`\`\`
+            ${draft}
+            \`\`\`
+            ---
+
+            **How to use:**
+            1. Review the draft
+            2. Copy it
+            3. Post on LinkedIn and/or X
+
+            Triggered by commit: ${{ github.sha }}
+            `;
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `📱 Social Draft – ${new Date().toISOString().split('T')[0]}`,
+              body: body,
+              labels: ['social-draft']
+            });
